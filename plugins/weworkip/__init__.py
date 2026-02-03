@@ -30,7 +30,7 @@ class WeWorkIP(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/suraxiuxiu/MoviePilot-Plugins/blob/main/icons/micon.png?raw=true"
     # 插件版本
-    plugin_version = "2.5"
+    plugin_version = "2.6"
     # 插件作者
     plugin_author = "suraxiuxiu"
     # 作者主页
@@ -92,7 +92,7 @@ class WeWorkIP(_PluginBase):
     _onlyonce = False
     _cookiecloud = CookieCloudHelper()
     _code = 0
-    _pattern = r"^#\d{6}$"
+    _pattern = r"^/ww \d{6}$"
     #cookie失效后定时唤起登录  如果关闭则手动调用登录
     _schedule_login = False
     _driver = None
@@ -503,7 +503,12 @@ class WeWorkIP(_PluginBase):
                     if 'mobile_confirm' in driver.current_url:
                         driver.switch_to.default_content()
                         #检测到验证页面  进入验证码流
-                        self.post_message(channel=MessageChannel.Wechat,mtype=NotificationType.Plugin,title = "检测到登录验证，请以 #123456 的格式回复验证码，两分钟后超时",userid=self._qr_send_users)
+                        self.post_message(
+                            channel=MessageChannel.Wechat,
+                            mtype=NotificationType.Plugin,
+                            title="检测到登录验证，请以 /ww 123456 的格式回复验证码，两分钟后超时",
+                            userid=self._qr_send_users
+                        )
                         logger.info("检测到登录验证，进入验证流程")
                         _wait_time = 0
                         while 'mobile_confirm' in driver.current_url:
@@ -524,7 +529,12 @@ class WeWorkIP(_PluginBase):
                                     'mobile_confirm' not in driver.current_url
                             )
                             if 'mobile_confirm' in driver.current_url:
-                                self.post_message(channel=MessageChannel.Wechat,mtype=NotificationType.Plugin,title = "登录失败,请检查验证码并重新发送",userid=self._qr_send_users)
+                                self.post_message(
+                                    channel=MessageChannel.Wechat,
+                                    mtype=NotificationType.Plugin,
+                                    title="登录失败,请检查验证码并重新发送 /ww 123456",
+                                    userid=self._qr_send_users
+                                )
                                 logger.info("登录失败,请检查验证码并重新发送")
                     cookies = driver.get_cookies()
                     self._cookie_from_CC = [f"{cookie['name']}={cookie['value']}" for cookie in cookies]
@@ -584,10 +594,22 @@ class WeWorkIP(_PluginBase):
     def login_fail(self):
         self._cookie_valid = False
         if self._schedule_login:
-            self.post_message(channel=MessageChannel.Wechat,mtype=NotificationType.Plugin,title = "登录失败",text = "已开启自动登录，即将开始下一轮登录。",userid=self._qr_send_users)
+            self.post_message(
+                channel=MessageChannel.Wechat,
+                mtype=NotificationType.Plugin,
+                title="登录失败",
+                text="已开启自动登录，即将开始下一轮登录。",
+                userid=self._qr_send_users
+            )
             self.create_login_job()
         else:
-            self.post_message(channel=MessageChannel.Wechat,mtype=NotificationType.Plugin,title = "登录失败",text = "如需再次登录，请回复\n#登录企业微信",userid=self._qr_send_users)    
+            self.post_message(
+                channel=MessageChannel.Wechat,
+                mtype=NotificationType.Plugin,
+                title="登录失败",
+                text="如需再次登录，请回复\n/ww login",
+                userid=self._qr_send_users
+            )    
 
     def check_connect(self):
         try:
@@ -630,25 +652,40 @@ class WeWorkIP(_PluginBase):
         if not self._enabled:
             return
         text = event.event_data.get("text")
+
+        # 处理验证码：/ww 123456
         if re.match(self._pattern, text):
-            self._code = text[1:]
+            self._code = text.split()[1]  # 提取数字部分
             logger.info(f"从MP应用收到验证码：{self._code}")
             return
-        if text == "#登录企业微信":
+
+        # 处理登录命令：/ww login
+        if text == "/ww login":
             if self._cookie_valid:
-                self.post_message(channel=MessageChannel.Wechat,mtype=NotificationType.Plugin,title = "缓存有效，无需登录",userid=self._qr_send_users)
+                self.post_message(
+                    channel=MessageChannel.Wechat,
+                    mtype=NotificationType.Plugin,
+                    title="缓存有效，无需登录",
+                    userid=self._qr_send_users
+                )
                 return
             self._scheduler.add_job(
-                    func=self.login,
-                    trigger="date",
-                    run_date=datetime.now(tz=pytz.timezone(settings.TZ))
-                    + timedelta(seconds=3),
-                    name="登录企业微信",
-                )
+                func=self.login,
+                trigger="date",
+                run_date=datetime.now(tz=pytz.timezone(settings.TZ))
+                + timedelta(seconds=3),
+                name="登录企业微信",
+            )
     
     def send_cookie_status(self):
         if not self._cookie_valid:
-            self.post_message(channel=MessageChannel.Wechat,mtype=NotificationType.Plugin,title = "企业微信Cookie失效",text = "回复下述指令唤起一次登录\n#登录企业微信",userid=self._qr_send_users)
+            self.post_message(
+                channel=MessageChannel.Wechat,
+                mtype=NotificationType.Plugin,
+                title="企业微信Cookie失效",
+                text="回复下述指令唤起一次登录\n/ww login",
+                userid=self._qr_send_users
+            )
 
     def get_state(self) -> bool:
         return self._enabled
@@ -918,7 +955,7 @@ class WeWorkIP(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "默认关闭自动登录，发送 #登录企业微信 至MP应用则可以唤起一次登录操作。如果需要验证手机，把验证码按照格式 #123456 发送到MP应用。",
+                                            "text": "默认关闭自动登录，发送 /ww login 至MP应用则可以唤起一次登录操作。如果需要验证手机，把验证码按照格式 /ww 123456 发送到MP应用。",
                                         },
                                     },
                                 ],
