@@ -30,7 +30,7 @@ class WeWorkIP(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/suraxiuxiu/MoviePilot-Plugins/blob/main/icons/micon.png?raw=true"
     # 插件版本
-    plugin_version = "2.6"
+    plugin_version = "2.6.2"
     # 插件作者
     plugin_author = "suraxiuxiu"
     # 作者主页
@@ -203,7 +203,7 @@ class WeWorkIP(_PluginBase):
     @eventmanager.register(EventType.PluginAction)
     def check(self, event: Event = None):
         """
-        检测函数
+        处理 PluginAction 事件：IP检测、登录和验证码提交
         """
         if not self._enabled:
             logger.error("插件未开启")
@@ -211,12 +211,88 @@ class WeWorkIP(_PluginBase):
 
         if event:
             event_data = event.event_data
-            if not event_data or event_data.get("action") != "weworkip":
+            if not event_data:
                 return
+
+            action = event_data.get("action")
+            channel = event.event_data.get("channel")
+            userid = event.event_data.get("user")
+
+            # 处理登录命令
+            if action == "login":
+                logger.info("收到登录命令 /ww_login")
+                if self._cookie_valid:
+                    self.post_message(
+                        channel=channel,
+                        mtype=NotificationType.Plugin,
+                        title="缓存有效，无需登录",
+                        userid=userid
+                    )
+                else:
+                    self.post_message(
+                        channel=channel,
+                        mtype=NotificationType.Plugin,
+                        title="正在启动登录流程...",
+                        userid=userid
+                    )
+                    self._scheduler.add_job(
+                        func=self.login,
+                        trigger="date",
+                        run_date=datetime.now(tz=pytz.timezone(settings.TZ))
+                        + timedelta(seconds=3),
+                        name="登录企业微信",
+                    )
+                return
+
+            # 处理验证码提交命令
+            if action == "submit_code":
+                # 从完整命令文本中提取验证码：/ww_code 123456
+                cmd_text = event.event_data.get("text", "")
+                logger.info(f"收到验证码命令，完整文本：{cmd_text}")
+
+                # 解析命令：提取空格后的6位数字
+                parts = cmd_text.split()
+                if len(parts) == 2 and parts[0] == "/ww_code":
+                    code = parts[1]
+                    if code.isdigit() and len(code) == 6:
+                        self._code = code
+                        logger.info(f"✅ 验证码接收成功：{self._code}")
+                        self.post_message(
+                            channel=channel,
+                            mtype=NotificationType.Plugin,
+                            title=f"✅ 已收到验证码：{self._code}",
+                            userid=userid
+                        )
+                    else:
+                        logger.warning(f"❌ 验证码格式错误：{code}")
+                        self.post_message(
+                            channel=channel,
+                            mtype=NotificationType.Plugin,
+                            title="❌ 验证码格式错误",
+                            text="请使用格式：/ww_code 123456",
+                            userid=userid
+                        )
+                else:
+                    logger.warning(f"❌ 命令格式错误：{cmd_text}")
+                    self.post_message(
+                        channel=channel,
+                        mtype=NotificationType.Plugin,
+                        title="❌ 命令格式错误",
+                        text="请使用格式：/ww_code 123456",
+                        userid=userid
+                    )
+                return
+
+            # 处理IP检测命令
+            if action != "weworkip":
+                return
+
             logger.info("收到命令，开始检测公网IP ...")
-            self.post_message(channel=event.event_data.get("channel"),
-                              title="开始检测公网IP ...",
-                              userid=event.event_data.get("user"))
+            self.post_message(
+                channel=channel,
+                title="开始检测公网IP ...",
+                userid=userid
+            )
 
         logger.info("开始检测公网IP")
         if self.CheckIP():
@@ -225,9 +301,11 @@ class WeWorkIP(_PluginBase):
 
         logger.info("检测公网IP完毕")
         if event:
-            self.post_message(channel=event.event_data.get("channel"),
-                              title="检测公网IP完毕",
-                              userid=event.event_data.get("user"))
+            self.post_message(
+                channel=event.event_data.get("channel"),
+                title="检测公网IP完毕",
+                userid=event.event_data.get("user")
+            )
         
     def CheckIP(self):
         if not self._cookie_valid:
@@ -506,7 +584,7 @@ class WeWorkIP(_PluginBase):
                         self.post_message(
                             channel=MessageChannel.Wechat,
                             mtype=NotificationType.Plugin,
-                            title="检测到登录验证，请以 /ww 123456 的格式回复验证码，两分钟后超时",
+                            title="检测到登录验证，请使用命令 /ww_code 123456 提交验证码，两分钟后超时",
                             userid=self._qr_send_users
                         )
                         logger.info("检测到登录验证，进入验证流程")
@@ -532,7 +610,7 @@ class WeWorkIP(_PluginBase):
                                 self.post_message(
                                     channel=MessageChannel.Wechat,
                                     mtype=NotificationType.Plugin,
-                                    title="登录失败,请检查验证码并重新发送 /ww 123456",
+                                    title="登录失败，请检查验证码并重新使用命令 /ww_code 123456",
                                     userid=self._qr_send_users
                                 )
                                 logger.info("登录失败,请检查验证码并重新发送")
@@ -607,7 +685,7 @@ class WeWorkIP(_PluginBase):
                 channel=MessageChannel.Wechat,
                 mtype=NotificationType.Plugin,
                 title="登录失败",
-                text="如需再次登录，请回复\n/ww login",
+                text="如需再次登录，请发送命令\n/ww_login",
                 userid=self._qr_send_users
             )    
 
@@ -646,36 +724,6 @@ class WeWorkIP(_PluginBase):
                 "browser":self._browser
             }
         )
-
-    @eventmanager.register(EventType.UserMessage)
-    def receive_message(self, event: Event):
-        if not self._enabled:
-            return
-        text = event.event_data.get("text")
-
-        # 处理验证码：/ww 123456
-        if re.match(self._pattern, text):
-            self._code = text.split()[1]  # 提取数字部分
-            logger.info(f"从MP应用收到验证码：{self._code}")
-            return
-
-        # 处理登录命令：/ww login
-        if text == "/ww login":
-            if self._cookie_valid:
-                self.post_message(
-                    channel=MessageChannel.Wechat,
-                    mtype=NotificationType.Plugin,
-                    title="缓存有效，无需登录",
-                    userid=self._qr_send_users
-                )
-                return
-            self._scheduler.add_job(
-                func=self.login,
-                trigger="date",
-                run_date=datetime.now(tz=pytz.timezone(settings.TZ))
-                + timedelta(seconds=3),
-                name="登录企业微信",
-            )
     
     def send_cookie_status(self):
         if not self._cookie_valid:
@@ -683,7 +731,7 @@ class WeWorkIP(_PluginBase):
                 channel=MessageChannel.Wechat,
                 mtype=NotificationType.Plugin,
                 title="企业微信Cookie失效",
-                text="回复下述指令唤起一次登录\n/ww login",
+                text="发送命令唤起登录\n/ww_login",
                 userid=self._qr_send_users
             )
 
@@ -701,9 +749,23 @@ class WeWorkIP(_PluginBase):
                 "cmd": "/weworkip",
                 "event": EventType.PluginAction,
                 "desc": "微信应用检测动态IP",
-                "category": "",
+                "category": "企业微信",
                 "data": {"action": "weworkip"},
-            }
+            },
+            {
+                "cmd": "/ww_login",
+                "event": EventType.PluginAction,
+                "desc": "登录企业微信",
+                "category": "企业微信",
+                "data": {"action": "login"},
+            },
+            {
+                "cmd": "/ww_code",
+                "event": EventType.PluginAction,
+                "desc": "提交登录验证码（格式：/ww_code 123456）",
+                "category": "企业微信",
+                "data": {"action": "submit_code"},
+            },
         ]
 
     def get_service(self) -> List[Dict[str, Any]]:
@@ -955,7 +1017,7 @@ class WeWorkIP(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "默认关闭自动登录，发送 /ww login 至MP应用则可以唤起一次登录操作。如果需要验证手机，把验证码按照格式 /ww 123456 发送到MP应用。",
+                                            "text": "默认关闭自动登录，发送命令 /ww_login 可唤起登录。如需验证手机，使用命令 /ww_code 123456 提交验证码。",
                                         },
                                     },
                                 ],
