@@ -84,7 +84,7 @@ class WeWorkIP(_PluginBase):
     _ip_changed = False
     # 刷新cookie间隔时间,默认5分钟,太久会导致cookie失效
     _refresh_cron = "*/5 * * * *"
-    # 状态通知时间 
+    # 状态通知时间
     _status_cron = "0 * * * *"
     #检测IP时间
     _check_cron = "*/11 * * * *"
@@ -177,7 +177,7 @@ class WeWorkIP(_PluginBase):
                     )
             else:
                 self.create_refresh_job()
-                
+
             if not self._schedule_login:
                 self._scheduler.add_job(
                             func=self.send_cookie_status,
@@ -193,7 +193,7 @@ class WeWorkIP(_PluginBase):
                     + timedelta(seconds=3),
                     name="初始化检测失效通知",
                 )
-            
+
             # 启动任务
             if self._scheduler.get_jobs():
                 self._scheduler.print_jobs()
@@ -249,42 +249,26 @@ class WeWorkIP(_PluginBase):
                 # 调试：打印完整的 event_data 结构
                 logger.info(f"[DEBUG] 完整 event_data: {event.event_data}")
 
-                # 尝试多个可能的字段名获取命令文本
-                cmd_text = (event.event_data.get("text", "") or
-                            event.event_data.get("cmd_text", "") or
-                            event.event_data.get("raw_text", "") or
-                            event.event_data.get("message", "") or
-                            event.event_data.get("content", ""))
-                logger.info(f"收到验证码命令，完整文本：{cmd_text}")
+                # MoviePilot 将命令参数放在 arg_str 字段中（只有参数部分，不包含命令名）
+                arg_str = event.event_data.get("arg_str", "")
+                logger.info(f"收到验证码命令， arg_str={arg_str}")
 
-                # 解析命令：提取空格后的6位数字
-                parts = cmd_text.split()
-                if len(parts) == 2 and parts[0] == "/ww_code":
-                    code = parts[1]
-                    if code.isdigit() and len(code) == 6:
-                        self._code = code
-                        logger.info(f"✅ 验证码接收成功：{self._code}")
-                        self.post_message(
-                            channel=channel,
-                            mtype=NotificationType.Plugin,
-                            title=f"✅ 已收到验证码：{self._code}",
-                            userid=userid
-                        )
-                    else:
-                        logger.warning(f"❌ 验证码格式错误：{code}")
-                        self.post_message(
-                            channel=channel,
-                            mtype=NotificationType.Plugin,
-                            title="❌ 验证码格式错误",
-                            text="请使用格式：/ww_code 123456",
-                            userid=userid
-                        )
-                else:
-                    logger.warning(f"❌ 命令格式错误：{cmd_text}")
+                # 直接验证 arg_str 中的6位数字
+                if arg_str and arg_str.isdigit():
+                    self._code = arg_str
+                    logger.info(f"✅ 验证码接收成功：{self._code}")
                     self.post_message(
                         channel=channel,
                         mtype=NotificationType.Plugin,
-                        title="❌ 命令格式错误",
+                        title=f"✅ 已收到验证码：{self._code}",
+                        userid=userid
+                    )
+                else:
+                    logger.warning(f"❌ 验证码格式错误：{arg_str}")
+                    self.post_message(
+                        channel=channel,
+                        mtype=NotificationType.Plugin,
+                        title="❌ 验证码格式错误",
                         text="请使用格式：/ww_code 123456",
                         userid=userid
                     )
@@ -313,10 +297,10 @@ class WeWorkIP(_PluginBase):
                 title="检测公网IP完毕",
                 userid=event.event_data.get("user")
             )
-        
+
     def CheckIP(self):
         if not self._cookie_valid:
-            logger.error("cookie以过期,跳过IP检测")
+            logger.error("cookie 已过期,跳过 IP 检测")
             return False
         if not self._ip_changed:  # 上次IP变更没有改动到企微 再次请求该IP
             return True
@@ -328,8 +312,8 @@ class WeWorkIP(_PluginBase):
             else:
                 logger.error(f"请求网址失败: {url}")
         if ip_address == "获取IP失败":
-            logger.error("获取IP失败") 
-            return False      
+            logger.error("获取IP失败")
+            return False
         if ip_address != self._current_ip_address:
             logger.info("检测到IP变化")
             self._current_ip_address = ip_address
@@ -392,7 +376,7 @@ class WeWorkIP(_PluginBase):
                 EC.invisibility_of_element_located((By.CLASS_NAME, "login_stage_title_text"))
             )
             logger.info("cookie有效校验成功")
-            self._cookie_valid = True    
+            self._cookie_valid = True
             self.__update_config()
         except Exception as e:
             logger.error("cookie失效,请重新获取")
@@ -498,7 +482,7 @@ class WeWorkIP(_PluginBase):
             if "session not created" in str(e):
                 logger.info("浏览器启动失败,跳过本次刷新")
             elif isinstance(e, TimeoutException) or "Timeout" in str(e):
-                logger.info("检测可能连接超时,跳过本次刷新") 
+                logger.info("检测可能连接超时,跳过本次刷新")
             else:
                 self._cookie_valid = False
             self.__update_config()
@@ -608,7 +592,7 @@ class WeWorkIP(_PluginBase):
                             )
                             input_element.send_keys(self._code)
                             WebDriverWait(driver, 10).until(
-                                lambda driver: 
+                                lambda driver:
                                     # 检查登录失败提示是否显示
                                     driver.find_elements(By.XPATH, "//div[contains(@class, 't-is-error') and contains(text(), '验证码错误')]") or
                                     'mobile_confirm' not in driver.current_url
@@ -647,7 +631,7 @@ class WeWorkIP(_PluginBase):
         finally:
             if 'driver' in locals():
                 driver.quit()
-    
+
     def create_refresh_job(self):
         logger.info("创建定时刷新企业微信缓存任务")
         try:
@@ -660,7 +644,7 @@ class WeWorkIP(_PluginBase):
         except Exception as err:
                 logger.error(f"定时刷新企业微信缓存任务配置错误：{err}")
                 self.systemmessage.put(f"定时刷新企业微信缓存任务配置错误：{err}")
-        
+
     def create_login_job(self):
         logger.info("唤起企业微信登录任务")
         try:
@@ -694,7 +678,7 @@ class WeWorkIP(_PluginBase):
                 title="登录失败",
                 text="如需再次登录，请发送命令\n/ww_login",
                 userid=self._qr_send_users
-            )    
+            )
 
     def check_connect(self):
         try:
@@ -731,7 +715,7 @@ class WeWorkIP(_PluginBase):
                 "browser":self._browser
             }
         )
-    
+
     def send_cookie_status(self):
         if not self._cookie_valid:
             self.post_message(
@@ -797,7 +781,7 @@ class WeWorkIP(_PluginBase):
                 }
             ]
         return []
-            
+
     def get_api(self) -> List[Dict[str, Any]]:
         pass
 
@@ -1205,13 +1189,13 @@ class WeWorkIP(_PluginBase):
         else:
             vaild_text = "缓存失效"
             color =  "#ff0000"
-            
+
         base_content = [
                             {
                                 "component": "div",
                                 "props": {
                                     "style": {
-                                        "textAlign": "center" 
+                                        "textAlign": "center"
                                     }
                                 },
                                 "content": [
@@ -1226,7 +1210,7 @@ class WeWorkIP(_PluginBase):
                                                 "backgroundColor": color,
                                                 "padding": "8px",
                                                 "borderRadius": "5px",
-                                                "display": "inline-block", 
+                                                "display": "inline-block",
                                                 "textAlign": "center",
                                                 "marginBottom": "40px"
                                             }
@@ -1305,16 +1289,16 @@ class WeWorkIP(_PluginBase):
             qr_tip = "扫描二维码登录"
         else:
             qr_tip = "二维码被玛露希尔爆破了,等一会再来吧"
-        
+
         if os.path.exists(self.qr_path) and self._enabled and not self._cookie_valid:
             with open(self.qr_path, 'rb') as image_file:
                 image_data = image_file.read()
                 base64_image = base64.b64encode(image_data).decode('utf-8')
                 img_src = f"data:image/png;base64,{base64_image}"
-        
+
         # 如果开启了内置登录，插入二维码的组件
         if not self._cookie_valid:
-            base_content[1:1] = [ 
+            base_content[1:1] = [
                                     {
                                         "component": "div",
                                         "text": qr_tip,
@@ -1348,7 +1332,7 @@ class WeWorkIP(_PluginBase):
                 self._driver.quit()
             if self._scheduler:
                 if self._scheduler.running:
-                    self._scheduler.shutdown()                 
+                    self._scheduler.shutdown()
                     self._scheduler.remove_all_jobs()
                 self._scheduler = None
         except Exception as e:

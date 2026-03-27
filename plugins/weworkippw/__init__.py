@@ -26,7 +26,7 @@ class WeWorkIPPW(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/suraxiuxiu/MoviePilot-Plugins/blob/main/icons/micon.png?raw=true"
     # 插件版本
-    plugin_version = "2.4.5"
+    plugin_version = "2.4.6"
     # 插件作者
     plugin_author = "suraxiuxiu"
     # 作者主页
@@ -70,7 +70,7 @@ class WeWorkIPPW(_PluginBase):
     _ip_changed = False
     # 刷新cookie间隔时间,默认5分钟,太久会导致cookie失效
     _refresh_cron = "*/5 * * * *"
-    # 状态通知时间 
+    # 状态通知时间
     _status_cron = "0 * * * *"
     #检测IP时间
     _check_cron = "*/11 * * * *"
@@ -131,7 +131,7 @@ class WeWorkIPPW(_PluginBase):
 
         if self._enabled or self._onlyonce:
             # 定时服务
-            self._scheduler = BackgroundScheduler(timezone=settings.TZ)       
+            self._scheduler = BackgroundScheduler(timezone=settings.TZ)
             # 运行一次定时服务
             if self._onlyonce:
                 logger.info("立即检测公网IP")
@@ -227,42 +227,26 @@ class WeWorkIPPW(_PluginBase):
                 # 调试：打印完整的 event_data 结构
                 logger.info(f"[DEBUG] 完整 event_data: {event.event_data}")
 
-                # 尝试多个可能的字段名获取命令文本
-                cmd_text = (event.event_data.get("text", "") or
-                                event.event_data.get("cmd_text", "") or
-                                event.event_data.get("raw_text", "") or
-                                event.event_data.get("message", "") or
-                                event.event_data.get("content", ""))
-                logger.info(f"收到验证码命令，完整文本：{cmd_text}")
+                # MoviePilot 将命令参数放在 arg_str 字段中（只有参数部分，不包含命令名）
+                arg_str = event.event_data.get("arg_str", "")
+                logger.info(f"收到验证码命令， arg_str={arg_str}")
 
-                # 解析命令：提取空格后的6位数字
-                parts = cmd_text.split()
-                if len(parts) == 2 and parts[0] == "/ww_code":
-                    code = parts[1]
-                    if code.isdigit() and len(code) == 6:
-                        self._code = code
-                        logger.info(f"✅ 验证码接收成功：{self._code}")
-                        self.post_message(
-                            channel=channel,
-                            mtype=NotificationType.Plugin,
-                            title=f"✅ 已收到验证码：{self._code}",
-                            userid=userid
-                        )
-                    else:
-                        logger.warning(f"❌ 验证码格式错误：{code}")
-                        self.post_message(
-                            channel=channel,
-                            mtype=NotificationType.Plugin,
-                            title="❌ 验证码格式错误",
-                            text="请使用格式：/ww_code 123456",
-                            userid=userid
-                        )
-                else:
-                    logger.warning(f"❌ 命令格式错误：{cmd_text}")
+                # 直接验证 arg_str 中的6位数字
+                if arg_str and arg_str.isdigit():
+                    self._code = arg_str
+                    logger.info(f"✅ 验证码接收成功：{self._code}")
                     self.post_message(
                         channel=channel,
                         mtype=NotificationType.Plugin,
-                        title="❌ 命令格式错误",
+                        title=f"✅ 已收到验证码：{self._code}",
+                        userid=userid
+                    )
+                else:
+                    logger.warning(f"❌ 验证码格式错误：{arg_str}")
+                    self.post_message(
+                        channel=channel,
+                        mtype=NotificationType.Plugin,
+                        title="❌ 验证码格式错误",
                         text="请使用格式：/ww_code 123456",
                         userid=userid
                     )
@@ -291,10 +275,10 @@ class WeWorkIPPW(_PluginBase):
                 title="检测公网IP完毕",
                 userid=event.event_data.get("user")
             )
-        
+
     def CheckIP(self):
         if not self._cookie_valid:
-            logger.error("cookie以过期,跳过IP检测")
+            logger.error("cookie 已过期,跳过 IP 检测")
             return False
         if not self._ip_changed:  # 上次IP变更没有改动到企微 再次请求该IP
             return True
@@ -306,8 +290,8 @@ class WeWorkIPPW(_PluginBase):
             else:
                 logger.error(f"请求网址失败: {url}")
         if ip_address == "获取IP失败":
-            logger.error("获取IP失败") 
-            return False      
+            logger.error("获取IP失败")
+            return False
         if ip_address != self._current_ip_address:
             logger.info("检测到IP变化")
             self._current_ip_address = ip_address
@@ -335,13 +319,13 @@ class WeWorkIPPW(_PluginBase):
         except Exception as e:
             logger.warning(f"{url}获取IP失败,Error: {e}")
             return "获取IP失败"
-            
+
     def ChangeIP(self):
         logger.info("开始请求企业微信管理更改可信IP")
         if not self.check_connect():
             logger.error("网络连接失败,跳过本次更改IP")
             return
-        try:    
+        try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
@@ -365,7 +349,7 @@ class WeWorkIPPW(_PluginBase):
                 else:
                     logger.info("加载企微管理界面成功")
                     self._cookie_valid = True
-                for index, url in enumerate(self._urls):           
+                for index, url in enumerate(self._urls):
                     logger.info(f"正在更改第{index+1}个应用的可信IP")
                     page.goto(url)
                     page.wait_for_selector('div.app_card_operate.js_show_ipConfig_dialog')
@@ -382,16 +366,16 @@ class WeWorkIPPW(_PluginBase):
                     time.sleep(1)
                     logger.info(f"更改第{index+1}个应用的可信IP成功")
                 self._ip_changed = True
-                browser.close() 
+                browser.close()
         except Exception as e:
             logger.error(f"更改可信IP失败:{e}")
-    
+
     def refresh_cookie(self,_login=True):
         logger.info("开始刷新企业微信缓存")
         if not self.check_connect():
             logger.error("网络连接失败,跳过本次缓存保活")
             return
-        try:    
+        try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
@@ -432,13 +416,13 @@ class WeWorkIPPW(_PluginBase):
                 browser.close()
             self.__update_config()
         except Exception as e:
-                logger.error(f"cookie校验失败:{e}") 
+                logger.error(f"cookie校验失败:{e}")
                 if "Timeout" in str(e):
-                    logger.info("检测可能连接超时,跳过本次刷新") 
+                    logger.info("检测可能连接超时,跳过本次刷新")
                 else:
                     self._cookie_valid = False
-                self.__update_config()   
-    
+                self.__update_config()
+
     def parse_cookie_header(self,cookie_header):
         try:
             cookies = []
@@ -452,11 +436,11 @@ class WeWorkIPPW(_PluginBase):
                 })
             return cookies
         except Exception as e:
-            logger.error(f"cookie转换失败,可能格式错误:{e}") 
-            logger.error(f"当前cookie:{cookie_header}") 
+            logger.error(f"cookie转换失败,可能格式错误:{e}")
+            logger.error(f"当前cookie:{cookie_header}")
             self._cookie_valid = False
             return ''
-    
+
     def get_cookie(self):
         cookie_header = ''
         try:
@@ -475,7 +459,7 @@ class WeWorkIPPW(_PluginBase):
                             break
                     if cookie_header == '':
                         cookie_header = self._cookie_header
-            else:                
+            else:
                 cookie_header = self._cookie_header
             if cookie_header == '' or cookie_header == None:
                 logger.error("未获取到任何cookie")
@@ -487,7 +471,7 @@ class WeWorkIPPW(_PluginBase):
             self.__update_config()
             return cookie
         except Exception as e:
-                logger.error(f"获取cookie失败:{e}") 
+                logger.error(f"获取cookie失败:{e}")
                 return cookie_header
 
     def login(self):
@@ -561,7 +545,7 @@ class WeWorkIPPW(_PluginBase):
                                     page.wait_for_timeout(1000)
                                     wait_time += 1
                                     if wait_time > 5:
-                                        break                          
+                                        break
                                 if 'mobile_confirm' in page.url:
                                     self.post_message(channel=MessageChannel.Wechat,mtype=NotificationType.Plugin,title = "登录失败，请检查验证码并重新使用命令 /ww_code 123456",userid=self._qr_send_users)
                                     logger.info("登录失败,请检查验证码并重新发送")
@@ -589,7 +573,7 @@ class WeWorkIPPW(_PluginBase):
         except Exception as e:
                 logger.error(f"登录失败:{e}")
                 self.login_fail()
-    
+
     def create_refresh_job(self):
         logger.info("创建定时刷新企业微信缓存任务")
         try:
@@ -602,7 +586,7 @@ class WeWorkIPPW(_PluginBase):
         except Exception as err:
                 logger.error(f"定时刷新企业微信缓存任务配置错误：{err}")
                 self.systemmessage.put(f"定时刷新企业微信缓存任务配置错误：{err}")
-        
+
     def create_login_job(self):
         logger.info("唤起企业微信登录任务")
         try:
@@ -631,7 +615,7 @@ class WeWorkIPPW(_PluginBase):
                 text="如需再次登录，请发送命令\n/ww_login",
                 userid=self._qr_send_users
             )
-            
+
     def check_connect(self):
         try:
             response = requests.get(self._urls[0], timeout=10)
@@ -642,7 +626,7 @@ class WeWorkIPPW(_PluginBase):
         except requests.exceptions.RequestException as e:
             logger.error(f"连接失败: {e}")
             return False
-                
+
     def __update_config(self):
         """
         更新配置
@@ -665,7 +649,7 @@ class WeWorkIPPW(_PluginBase):
                 "status_cron":self._status_cron
             }
         )
-    
+
     def send_cookie_status(self):
         if not self._cookie_valid:
             self.post_message(
@@ -729,7 +713,7 @@ class WeWorkIPPW(_PluginBase):
                 "kwargs": {}
             }]
         return []
-            
+
     def get_api(self) -> List[Dict[str, Any]]:
         pass
 
@@ -1081,13 +1065,13 @@ class WeWorkIPPW(_PluginBase):
         else:
             vaild_text = "缓存失效"
             color =  "#ff0000"
-            
+
         base_content = [
                             {
                                 "component": "div",
                                 "props": {
                                     "style": {
-                                        "textAlign": "center" 
+                                        "textAlign": "center"
                                     }
                                 },
                                 "content": [
@@ -1102,7 +1086,7 @@ class WeWorkIPPW(_PluginBase):
                                                 "backgroundColor": color,
                                                 "padding": "8px",
                                                 "borderRadius": "5px",
-                                                "display": "inline-block", 
+                                                "display": "inline-block",
                                                 "textAlign": "center",
                                                 "marginBottom": "40px"
                                             }
@@ -1181,16 +1165,16 @@ class WeWorkIPPW(_PluginBase):
             qr_tip = "扫描二维码登录"
         else:
             qr_tip = "二维码被玛露希尔爆破了,等一会再来吧"
-        
+
         if os.path.exists(self.qr_path) and self._enabled and not self._cookie_valid:
             with open(self.qr_path, 'rb') as image_file:
                 image_data = image_file.read()
                 base64_image = base64.b64encode(image_data).decode('utf-8')
                 img_src = f"data:image/png;base64,{base64_image}"
-        
+
         # 如果开启了内置登录，插入二维码的组件
         if not self._cookie_valid:
-            base_content[1:1] = [ 
+            base_content[1:1] = [
                                     {
                                         "component": "div",
                                         "text": qr_tip,
