@@ -246,8 +246,15 @@ class WeWorkIP(_PluginBase):
 
             # 处理验证码提交命令
             if action == "submit_code":
-                # 从完整命令文本中提取验证码：/ww_code 123456
-                cmd_text = event.event_data.get("text", "")
+                # 调试：打印完整的 event_data 结构
+                logger.info(f"[DEBUG] 完整 event_data: {event.event_data}")
+
+                # 尝试多个可能的字段名获取命令文本
+                cmd_text = (event.event_data.get("text", "") or
+                            event.event_data.get("cmd_text", "") or
+                            event.event_data.get("raw_text", "") or
+                            event.event_data.get("message", "") or
+                            event.event_data.get("content", ""))
                 logger.info(f"收到验证码命令，完整文本：{cmd_text}")
 
                 # 解析命令：提取空格后的6位数字
